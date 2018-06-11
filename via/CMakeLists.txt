@@ -3,30 +3,15 @@ file(GLOB TEXTURES
 )
 file(COPY ${TEXTURES} DESTINATION ${CMAKE_BINARY_DIR}/via/images)
 
-# Predefine loader root as a cmake cache variable for cmake-gui
-set(LOADER_REPO_ROOT "LOADER-NOTFOUND" CACHE PATH "Absolute path to the root of the loader repository")
 
-if(LOADER_REPO_ROOT)
-    message(STATUS "Using user-supplied path to locate Vulkan")
-    if(WIN32)
-        set (LOADER_SEARCH_PATHS
-            "${LOADER_REPO_ROOT}/${BUILDTGT_DIR}/loader/${DEBUG_DECORATION}"
-            "${LOADER_REPO_ROOT}/${BUILDTGT_DIR}/loader/${RELEASE_DECORATION}"
-            )
-    elseif(UNIX)
-        set (LOADER_SEARCH_PATHS
-            "${LOADER_REPO_ROOT}/${BUILDTGT_DIR}/loader"
-            )
-    endif()
-    find_library(LIBVK NAMES vulkan vulkan-1
-        HINTS ${LOADER_SEARCH_PATHS}
-        )
-    message(STATUS "Found Vulkan: ${LIBVK}")
-else()
-    message(STATUS "Using find_package to locate Vulkan")
-    find_package(Vulkan)
-    set (LIBVK "Vulkan::Vulkan")
+if (VULKAN_LOADER_INSTALL_DIR)
+    message(STATUS "VULKAN_LOADER_INSTALL_DIR specified, using find_package to locate Vulkan")
+elseif(ENV{VULKAN_LOADER_INSTALL_DIR})
+    message(STATUS "VULKAN_LOADER_INSTALL_DIR environment variable specified, using find_package to locate Vulkan")
 endif()
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH};${VULKAN_LOADER_INSTALL_DIR};${VULKAN_HEADERS_INSTALL_DIR};$ENV{VULKAN_LOADER_INSTALL_DIR};$ENV{VULKAN_HEADERS_INSTALL_DIR})
+find_package(Vulkan)
+set (LIBVK "Vulkan::Vulkan")
 
 if(WIN32)
     # For Windows, since 32-bit and 64-bit items can co-exist, we build each in its own build directory.

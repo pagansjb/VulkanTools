@@ -76,8 +76,8 @@ set(VULKANTOOLS_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
 set(VALIDATION_LAYERS_SCRIPTS_DIR ${VALIDATION_LAYERS_ROOT_DIR}/scripts)
 
 # Header file for CMake settings
-include_directories(${VALIDATION_LAYERS_ROOT_DIR}/Vulkan-Headers/include)
-
+find_package(VulkanHeaders)
+include_directories(${VulkanHeaders_INCLUDE_DIR})
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows" OR
     CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -137,14 +137,11 @@ if (WIN32)
                          IMPORTED_LOCATION_DEBUG "${JSONCPP_DLIB}")
 endif()
 
-
-set(VULKAN_REGISTRY_DIR ${VALIDATION_LAYERS_ROOT_DIR}/Vulkan-Headers/registry CACHE PATH "Path to Vulkan registry files")
-
 # Define macro used for building vkxml generated files
 macro(run_vulkantools_vk_xml_generate dependency output)
     add_custom_command(OUTPUT ${output}
-    COMMAND ${PYTHON_CMD} ${VULKANTOOLS_SCRIPTS_DIR}/vt_genvk.py -registry ${VULKAN_REGISTRY_DIR}/vk.xml ${output}
-    DEPENDS ${VULKAN_REGISTRY_DIR}/vk.xml ${VULKAN_REGISTRY_DIR}/generator.py ${VULKANTOOLS_SCRIPTS_DIR}/${dependency} ${VULKANTOOLS_SCRIPTS_DIR}/vt_genvk.py ${VULKAN_REGISTRY_DIR}/reg.py
+    COMMAND ${PYTHON_CMD} ${VULKANTOOLS_SCRIPTS_DIR}/vt_genvk.py -registry ${VulkanRegistry_DIR}/vk.xml -scripts ${VulkanRegistry_DIR} ${output}
+    DEPENDS ${VulkanRegistry_DIR}/vk.xml ${VulkanRegistry_DIR}/generator.py ${VULKANTOOLS_SCRIPTS_DIR}/${dependency} ${VULKANTOOLS_SCRIPTS_DIR}/vt_genvk.py ${VulkanRegistry_DIR}/reg.py
     )
 endmacro()
 
