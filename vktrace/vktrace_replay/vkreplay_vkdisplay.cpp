@@ -25,7 +25,7 @@
 
 #include "vkreplay_vkdisplay.h"
 
-#if defined(PLATFORM_LINUX) && !defined(ANDROID) && defined(VKREPLAY_USE_WSI_WAYLAND)
+#if defined(PLATFORM_LINUX) && !defined(ANDROID) && defined(VK_USE_PLATFORM_WAYLAND_KHR)
 #include <linux/input.h>
 #endif
 
@@ -36,138 +36,28 @@
 #define APP_NAME "vkreplay_vk"
 #define IDI_ICON 101
 
-vkDisplay::vkDisplay() : m_initedVK(false), m_windowWidth(0), m_windowHeight(0), m_frameNumber(0) {
-#if defined(PLATFORM_LINUX)
-#if defined(ANDROID)
-    memset(&m_surface, 0, sizeof(VkIcdSurfaceAndroid));
-    m_window = 0;
-    m_android_app = nullptr;
-#else
-#if defined(VKREPLAY_USE_WSI_XCB)
+#if defined(PLATFORM_LINUX) && defined(VK_USE_PLATFORM_XCB_KHR)
+
+const char *vkDisplayXcb::NAME = "xcb";
+
+vkDisplayXcb::vkDisplayXcb() : m_windowWidth(0), m_windowHeight(0), m_frameNumber(0) {
     memset(&m_surface, 0, sizeof(VkIcdSurfaceXcb));
     m_pXcbConnection = NULL;
     m_pXcbScreen = NULL;
     m_XcbWindow = 0;
-#elif defined(VKREPLAY_USE_WSI_XLIB)
-    memset(&m_surface, 0, sizeof(VkIcdSurfaceXlib));
-#elif defined(VKREPLAY_USE_WSI_WAYLAND)
-    memset(&m_surface, 0, sizeof(VkIcdSurfaceWayland));
-#endif
-#endif
-#elif defined(WIN32)
-    memset(&m_surface, 0, sizeof(VkIcdSurfaceWin32));
-    m_windowHandle = NULL;
-    m_connection = NULL;
-#endif
 }
 
-vkDisplay::~vkDisplay() {
-#if defined(PLATFORM_LINUX) && !defined(ANDROID)
-#if defined(VKREPLAY_USE_WSI_XCB)
+vkDisplayXcb::~vkDisplayXcb() {
     if (m_XcbWindow != 0) {
         xcb_destroy_window(m_pXcbConnection, m_XcbWindow);
     }
     if (m_pXcbConnection != NULL) {
         xcb_disconnect(m_pXcbConnection);
     }
-#elif defined(VKREPLAY_USE_WSI_XLIB)
-
-#elif defined(VKREPLAY_USE_WSI_WAYLAND)
-    if (m_keyboard) wl_keyboard_destroy(m_keyboard);
-    if (m_pointer) wl_pointer_destroy(m_pointer);
-    if (m_seat) wl_seat_destroy(m_seat);
-    if (m_shell_surface) wl_shell_surface_destroy(m_shell_surface);
-    if (m_wl_surface) wl_surface_destroy(m_wl_surface);
-    if (m_shell) wl_shell_destroy(m_shell);
-    if (m_compositor) wl_compositor_destroy(m_compositor);
-    if (m_registry) wl_registry_destroy(m_registry);
-    if (m_display) wl_display_disconnect(m_display);
-#endif
-#endif
 }
 
-VkResult vkDisplay::init_vk(unsigned int gpu_idx) {
-#if 0
-    VkApplicationInfo appInfo = {};
-    appInfo.pApplicationName = APP_NAME;
-    appInfo.pEngineName = "";
-    appInfo.apiVersion = VK_API_VERSION;
-    VkResult res = vkInitAndEnumerateGpus(&appInfo, NULL, VK_MAX_PHYSICAL_GPUS, &m_gpuCount, m_gpus);
-    if ( res == VK_SUCCESS ) {
-        // retrieve the GPU information for all GPUs
-        for( uint32_t gpu = 0; gpu < m_gpuCount; gpu++)
-        {
-            size_t gpuInfoSize = sizeof(m_gpuProps[0]);
-
-            // get the GPU physical properties:
-            res = vkGetGpuInfo( m_gpus[gpu], VK_INFO_TYPE_PHYSICAL_GPU_PROPERTIES, &gpuInfoSize, &m_gpuProps[gpu]);
-            if (res != VK_SUCCESS)
-                vktrace_LogWarning("Failed to retrieve properties for gpu[%d] result %d", gpu, res);
-        }
-        res = VK_SUCCESS;
-    } else if ((gpu_idx + 1) > m_gpuCount) {
-        vktrace_LogError("vkInitAndEnumerate number of gpus does not include requested index: num %d, requested %d", m_gpuCount, gpu_idx);
-        return -1;
-    } else {
-        vktrace_LogError("vkInitAndEnumerate failed");
-        return res;
-    }
-    // TODO add multi-gpu support always use gpu[gpu_idx] for now
-    // get all extensions supported by this device gpu[gpu_idx]
-    // first check if extensions are available and save a list of them
-    bool foundWSIExt = false;
-    for( int ext = 0; ext < sizeof( extensions ) / sizeof( extensions[0] ); ext++)
-    {
-        res = vkGetExtensionSupport( m_gpus[gpu_idx], extensions[ext] );
-        if (res == VK_SUCCESS) {
-            m_extensions.push_back((char *) extensions[ext]);
-            if (!strcmp(extensions[ext], "VK_WSI_WINDOWS"))
-                foundWSIExt = true;
-        }
-    }
-    if (!foundWSIExt) {
-        vktrace_LogError("VK_WSI_WINDOWS extension not supported by gpu[%d]", gpu_idx);
-        return VK_ERROR_INCOMPATIBLE_DEVICE;
-    }
-    // TODO generalize this: use one universal queue for now
-    VkDeviceQueueCreateInfo dqci = {};
-    dqci.queueCount = 1;
-    dqci.queueType = VK_QUEUE_UNIVERSAL;
-    std::vector<float> queue_priorities (dqci.queueCount, 0.0);
-    dqci.pQueuePriorities = queue_priorities.data();
-    // create the device enabling validation level 4
-    const char * const * extensionNames = &m_extensions[0];
-    VkDeviceCreateInfo info = {};
-    info.queueCreateInfoCount = 1;
-    info.pQueueCreateInfos = &dqci;
-    info.enabledExtensionCount = static_cast <uint32_t> (m_extensions.size());
-    info.ppEnabledExtensionNames = extensionNames;
-    info.flags = VK_DEVICE_CREATE_VALIDATION;
-    info.maxValidationLevel = VK_VALIDATION_LEVEL_4;
-    bool32_t vkTrue = VK_TRUE;
-    res = vkDbgSetGlobalOption( VK_DBG_OPTION_BREAK_ON_ERROR, sizeof( vkTrue ), &vkTrue );
-    if (res != VK_SUCCESS)
-        vktrace_LogWarning("Could not set debug option break on error");
-    res = vkCreateDevice( m_gpus[0], &info, &m_dev[gpu_idx]);
-    return res;
-#else
-    return VK_ERROR_INITIALIZATION_FAILED;
-#endif
-}
-
-int vkDisplay::init(const unsigned int gpu_idx) {
-// m_gpuIdx = gpu_idx;
-#if 0
-    VkResult result = init_vk(gpu_idx);
-    if (result != VK_SUCCESS) {
-        vktrace_LogError("could not init vulkan library");
-        return -1;
-    } else {
-        m_initedVK = true;
-    }
-#endif
-#if defined(PLATFORM_LINUX) && !defined(ANDROID)
-#if defined(VKREPLAY_USE_WSI_XCB)
+int vkDisplayXcb::init(const unsigned int gpu_idx) {
+    // m_gpuIdx = gpu_idx;
     const xcb_setup_t *setup;
     xcb_screen_iterator_t iter;
     int scr;
@@ -176,102 +66,13 @@ int vkDisplay::init(const unsigned int gpu_idx) {
     iter = xcb_setup_roots_iterator(setup);
     while (scr-- > 0) xcb_screen_next(&iter);
     m_pXcbScreen = iter.data;
-#elif defined(VKREPLAY_USE_WSI_XLIB)
-// TODO
-#elif defined(VKREPLAY_USE_WSI_WAYLAND)
-    try {
-        m_display = wl_display_connect(NULL);
-        if (!m_display) throw std::runtime_error("failed to connect to the display server");
 
-        m_registry = wl_display_get_registry(m_display);
-        if (!m_registry) throw std::runtime_error("failed to get registry");
-
-        wl_registry_add_listener(m_registry, &vkDisplay::registry_listener, this);
-        wl_display_roundtrip(m_display);
-
-        if (!m_compositor) throw std::runtime_error("failed to bind compositor");
-
-        if (!m_shell) throw std::runtime_error("failed to bind shell");
-    } catch (...) {
-        if (m_shell) wl_shell_destroy(m_shell);
-        if (m_compositor) wl_compositor_destroy(m_compositor);
-        if (m_registry) wl_registry_destroy(m_registry);
-        if (m_display) wl_display_disconnect(m_display);
-
-        throw;
-    }
-#endif
-#endif
     set_pause_status(false);
     set_quit_status(false);
     return 0;
 }
 
-#if defined(WIN32)
-LRESULT WINAPI WindowProcVk(HWND window, unsigned int msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
-        case WM_KEYUP: {
-            auto *const display = (vkDisplay *)GetWindowLongPtr(window, GWLP_USERDATA);
-            assert(display != nullptr);
-            switch (wp) {
-                case VK_SPACE:
-                    display->set_pause_status(!display->get_pause_status());
-                    break;
-                case VK_ESCAPE:
-                    DestroyWindow(window);
-                    PostQuitMessage(0);
-                    break;
-                default:
-                    break;
-            }
-            return S_OK;
-        }
-        case WM_NCCREATE:
-            // Changes made with SetWindowLongPtr will not take effect until SetWindowPos is called.
-            SetWindowLongPtr(window, GWLP_USERDATA, (LONG_PTR)((CREATESTRUCT *)lp)->lpCreateParams);
-            SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
-            return DefWindowProc(window, msg, wp, lp);
-        case WM_CLOSE:
-            DestroyWindow(window);
-        // fall-thru
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return S_OK;
-        default:
-            return DefWindowProc(window, msg, wp, lp);
-    }
-}
-#endif
-
-int vkDisplay::set_window(vktrace_window_handle hWindow, unsigned int width, unsigned int height) {
-#if defined(PLATFORM_LINUX)
-#if defined(ANDROID)
-    m_window = hWindow->window;
-    m_surface.window = hWindow->window;
-    m_android_app = hWindow;
-    m_android_app->userData = this;
-#else
-#if defined(VKREPLAY_USE_WSI_XCB)
-    m_XcbWindow = hWindow;
-#elif defined(VKREPLAY_USE_WSI_XLIB)
-// TODO
-#elif defined(VKREPLAY_USE_WSI_WAYLAND)
-    m_display = hWindow;
-#endif
-#endif
-#elif defined(WIN32)
-    m_windowHandle = hWindow;
-#endif
-    m_windowWidth = width;
-    m_windowHeight = height;
-    return 0;
-}
-
-int vkDisplay::create_window(const unsigned int width, const unsigned int height) {
-#if defined(PLATFORM_LINUX)
-#if defined(ANDROID)
-#else
-#if defined(VKREPLAY_USE_WSI_XCB)
+int vkDisplayXcb::create_window(const unsigned int width, const unsigned int height) {
     uint32_t value_mask, value_list[32];
     m_XcbWindow = xcb_generate_id(m_pXcbConnection);
 
@@ -299,108 +100,14 @@ int vkDisplay::create_window(const unsigned int width, const unsigned int height
     m_surface.base.platform = VK_ICD_WSI_PLATFORM_XCB;
     m_surface.connection = m_pXcbConnection;
     m_surface.window = m_XcbWindow;
-#elif defined(VKREPLAY_USE_WSI_XLIB)
-// TODO
-#elif defined(VKREPLAY_USE_WSI_WAYLAND)
-    m_wl_surface = wl_compositor_create_surface(m_compositor);
-    if (!m_wl_surface) throw std::runtime_error("failed to create surface");
 
-    m_shell_surface = wl_shell_get_shell_surface(m_shell, m_wl_surface);
-    if (!m_shell_surface) throw std::runtime_error("failed to shell_surface");
-
-    wl_shell_surface_add_listener(m_shell_surface, &vkDisplay::shell_surface_listener, this);
-    // set title
-    // wl_shell_surface_set_title(m_shell_surface, "");
-    wl_shell_surface_set_toplevel(m_shell_surface);
-
-    m_surface.base.platform = VK_ICD_WSI_PLATFORM_WAYLAND;
-    m_surface.display = m_display;
-    m_surface.surface = m_wl_surface;
-#endif
-#endif
-#elif defined(WIN32)
-    // Register Window class
-    WNDCLASSEX wcex = {};
-    m_connection = GetModuleHandle(0);
-    wcex.cbSize = sizeof(WNDCLASSEX);
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = WindowProcVk;
-    wcex.cbClsExtra = 0;
-    wcex.cbWndExtra = 0;
-    wcex.hInstance = m_connection;
-    wcex.hIcon = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_ICON));
-    wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wcex.lpszMenuName = NULL;
-    wcex.lpszClassName = APP_NAME;
-    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_ICON));
-    if (!RegisterClassEx(&wcex)) {
-        vktrace_LogError("Failed to register windows class");
-        return -1;
-    }
-
-    // create the window
-    RECT wr = {0, 0, (LONG)width, (LONG)height};
-    AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
-    m_windowHandle = CreateWindow(APP_NAME, APP_NAME, WS_OVERLAPPEDWINDOW, 0, 0, wr.right - wr.left, wr.bottom - wr.top, NULL, NULL,
-                                  wcex.hInstance, this);
-
-    if (m_windowHandle) {
-        m_windowWidth = width;
-        m_windowHeight = height;
-    } else {
-        vktrace_LogError("Failed to create window");
-        return -1;
-    }
-    // TODO : Not sure of best place to put this, but I have all the info I need here so just setting it all here for now
-    m_surface.base.platform = VK_ICD_WSI_PLATFORM_WIN32;
-    m_surface.hinstance = wcex.hInstance;
-    m_surface.hwnd = m_windowHandle;
-#endif
     return 0;
 }
 
-void vkDisplay::resize_window(const unsigned int width, const unsigned int height) {
+void vkDisplayXcb::resize_window(const unsigned int width, const unsigned int height) {
     if (width != m_windowWidth || height != m_windowHeight) {
         m_windowWidth = width;
         m_windowHeight = height;
-#if defined(PLATFORM_LINUX)
-#if defined(ANDROID)
-        // For Android, we adjust the screen orientation based on requested width and height.
-        int32_t pixel_width = ANativeWindow_getWidth(m_window);
-        int32_t pixel_height = ANativeWindow_getHeight(m_window);
-
-        // We don't change the current orientation if width == height or if the requested orientation matches the current
-        // orientation.
-        if ((width != height) && ((width < height) != (pixel_width < pixel_height))) {
-            JavaVM *jni_vm = nullptr;
-            jobject jni_activity = nullptr;
-            JNIEnv *env = nullptr;
-
-            if ((m_android_app != nullptr) && (m_android_app->activity != nullptr)) {
-                jni_vm = m_android_app->activity->vm;
-                jni_activity = m_android_app->activity->clazz;
-            }
-
-            if ((jni_vm != nullptr) && (jni_activity != 0) && (jni_vm->AttachCurrentThread(&env, nullptr) == JNI_OK)) {
-                jclass object_class = env->GetObjectClass(jni_activity);
-                jmethodID set_orientation = env->GetMethodID(object_class, "setRequestedOrientation", "(I)V");
-
-                if (width > height) {
-                    const int SCREEN_ORIENTATION_LANDSCAPE = 0;
-                    env->CallVoidMethod(jni_activity, set_orientation, SCREEN_ORIENTATION_LANDSCAPE);
-                } else {
-                    const int SCREEN_ORIENTATION_PORTRAIT = 1;
-                    env->CallVoidMethod(jni_activity, set_orientation, SCREEN_ORIENTATION_PORTRAIT);
-                }
-
-                jni_vm->DetachCurrentThread();
-            }
-        }
-
-        ANativeWindow_setBuffersGeometry(m_window, width, height, ANativeWindow_getFormat(m_window));
-#else
-#if defined(VKREPLAY_USE_WSI_XCB)
         uint32_t values[2];
         values[0] = width;
         values[1] = height;
@@ -414,40 +121,10 @@ void vkDisplay::resize_window(const unsigned int width, const unsigned int heigh
         // Pause the replay until we receive a MapNotify event from the
         // server indicating that our request has been processed
         set_pause_status(true);
-
-#elif defined(VKREPLAY_USE_WSI_XLIB)
-// TODO
-#elif defined(VKREPLAY_USE_WSI_WAYLAND)
-// In Wayland, the shell_surface should resize based on the Vulkan surface automagically
-#endif
-#endif
-#elif defined(WIN32)
-        RECT wr = {0, 0, (LONG)width, (LONG)height};
-        AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
-        SetWindowPos(get_window_handle(), HWND_TOP, 0, 0, wr.right - wr.left, wr.bottom - wr.top, SWP_NOMOVE);
-
-        // Make sure window is visible.
-        ShowWindow(m_windowHandle, SW_SHOWDEFAULT);
-#endif
     }
 }
 
-void vkDisplay::process_event() {
-#if defined(PLATFORM_LINUX)
-#if defined(ANDROID)
-    int events;
-    struct android_poll_source *source;
-    if (ALooper_pollAll(0, NULL, &events, (void **)&source) >= 0) {
-        if (source) {
-            source->process(m_android_app, source);
-        }
-
-        if (m_android_app->destroyRequested != 0) {
-            this->set_quit_status(true);
-        }
-    }
-#else
-#if defined(VKREPLAY_USE_WSI_XCB)
+void vkDisplayXcb::process_event() {
     xcb_connection_t *xcb_conn = this->get_connection_handle();
     xcb_generic_event_t *event = xcb_poll_for_event(xcb_conn);
     xcb_flush(xcb_conn);
@@ -494,77 +171,147 @@ void vkDisplay::process_event() {
         free(event);
         event = xcb_poll_for_event(xcb_conn);
     }
-#elif defined(VKREPLAY_USE_WSI_XLIB)
-// TODO
-#elif defined(VKREPLAY_USE_WSI_WAYLAND)
-    // Interaction is handled in the callbacks
-    wl_display_dispatch_pending(m_display);
-#endif
-#endif
-#elif defined(WIN32)
-    MSG msg = {};
-    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-        if (msg.message == WM_QUIT) {
-            exit(0);  // Prevents crashing due to vulkan cmds being on different thread than WindowProcVk
-        }
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-#endif
 }
 
-#if defined(PLATFORM_LINUX) && !defined(ANDROID) && defined(VKREPLAY_USE_WSI_WAYLAND)
+#endif  // defined(PLATFORM_LINUX) && defined(VK_USE_PLATFORM_XCB_KHR)
+
+#if defined(PLATFORM_LINUX) && defined(VK_USE_PLATFORM_WAYLAND_KHR)
+
+const char *vkDisplayWayland::NAME = "wayland";
+
+///////////////////////////////////////////////////////////////
+
+vkDisplayWayland::vkDisplayWayland() : m_windowWidth(0), m_windowHeight(0), m_frameNumber(0) {
+    memset(&m_surface, 0, sizeof(VkIcdSurfaceWayland));
+}
+
+vkDisplayWayland::~vkDisplayWayland() {
+    if (m_keyboard) wl_keyboard_destroy(m_keyboard);
+    if (m_pointer) wl_pointer_destroy(m_pointer);
+    if (m_seat) wl_seat_destroy(m_seat);
+    if (m_shell_surface) wl_shell_surface_destroy(m_shell_surface);
+    if (m_wl_surface) wl_surface_destroy(m_wl_surface);
+    if (m_shell) wl_shell_destroy(m_shell);
+    if (m_compositor) wl_compositor_destroy(m_compositor);
+    if (m_registry) wl_registry_destroy(m_registry);
+    if (m_display) wl_display_disconnect(m_display);
+}
+
+int vkDisplayWayland::init(const unsigned int gpu_idx) {
+    // m_gpuIdx = gpu_idx;
+    try {
+        m_display = wl_display_connect(NULL);
+        if (!m_display) throw std::runtime_error("failed to connect to the display server");
+
+        m_registry = wl_display_get_registry(m_display);
+        if (!m_registry) throw std::runtime_error("failed to get registry");
+
+        wl_registry_add_listener(m_registry, &vkDisplayWayland::registry_listener, this);
+        wl_display_roundtrip(m_display);
+
+        if (!m_compositor) throw std::runtime_error("failed to bind compositor");
+
+        if (!m_shell) throw std::runtime_error("failed to bind shell");
+    } catch (...) {
+        if (m_shell) wl_shell_destroy(m_shell);
+        if (m_compositor) wl_compositor_destroy(m_compositor);
+        if (m_registry) wl_registry_destroy(m_registry);
+        if (m_display) wl_display_disconnect(m_display);
+
+        throw;
+    }
+
+    set_pause_status(false);
+    set_quit_status(false);
+    return 0;
+}
+
+int vkDisplayWayland::create_window(const unsigned int width, const unsigned int height) {
+    m_wl_surface = wl_compositor_create_surface(m_compositor);
+    if (!m_wl_surface) throw std::runtime_error("failed to create surface");
+
+    m_shell_surface = wl_shell_get_shell_surface(m_shell, m_wl_surface);
+    if (!m_shell_surface) throw std::runtime_error("failed to shell_surface");
+
+    wl_shell_surface_add_listener(m_shell_surface, &vkDisplayWayland::shell_surface_listener, this);
+    // set title
+    // wl_shell_surface_set_title(m_shell_surface, "");
+    wl_shell_surface_set_toplevel(m_shell_surface);
+
+    m_surface.base.platform = VK_ICD_WSI_PLATFORM_WAYLAND;
+    m_surface.display = m_display;
+    m_surface.surface = m_wl_surface;
+
+    return 0;
+}
+
+void vkDisplayWayland::resize_window(const unsigned int width, const unsigned int height) {
+    if (width != m_windowWidth || height != m_windowHeight) {
+        m_windowWidth = width;
+        m_windowHeight = height;
+        // In Wayland, the shell_surface should resize based on the Vulkan surface automagically
+    }
+}
+
+void vkDisplayWayland::process_event() {
+    // Interaction is handled in the callbacks
+    wl_display_dispatch_pending(m_display);
+}
+
 // Wayland callbacks, needed to handle events from the display manager.
 // Some stubs here that could be potentially removed
-void vkDisplay::handle_ping(void *data, wl_shell_surface *shell_surface, uint32_t serial) {
+void vkDisplayWayland::handle_ping(void *data, wl_shell_surface *shell_surface, uint32_t serial) {
     wl_shell_surface_pong(shell_surface, serial);
 }
 
-void vkDisplay::handle_configure(void *data, wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height) {}
+void vkDisplayWayland::handle_configure(void *data, wl_shell_surface *shell_surface, uint32_t edges, int32_t width,
+                                        int32_t height) {}
 
-void vkDisplay::handle_popup_done(void *data, wl_shell_surface *shell_surface) {}
+void vkDisplayWayland::handle_popup_done(void *data, wl_shell_surface *shell_surface) {}
 
-const struct wl_shell_surface_listener vkDisplay::shell_surface_listener = {vkDisplay::handle_ping, vkDisplay::handle_configure,
-                                                                            vkDisplay::handle_popup_done};
+const struct wl_shell_surface_listener vkDisplayWayland::shell_surface_listener = {
+    vkDisplayWayland::handle_ping, vkDisplayWayland::handle_configure, vkDisplayWayland::handle_popup_done};
 
-void vkDisplay::pointer_handle_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface,
-                                     wl_fixed_t sx, wl_fixed_t sy) {}
+void vkDisplayWayland::pointer_handle_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface,
+                                            wl_fixed_t sx, wl_fixed_t sy) {}
 
-void vkDisplay::pointer_handle_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface) {}
+void vkDisplayWayland::pointer_handle_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface) {}
 
-void vkDisplay::pointer_handle_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t sx, wl_fixed_t sy) {}
+void vkDisplayWayland::pointer_handle_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t sx, wl_fixed_t sy) {}
 
-void vkDisplay::pointer_handle_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button,
-                                      uint32_t state) {
+void vkDisplayWayland::pointer_handle_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time,
+                                             uint32_t button, uint32_t state) {
     if (button == BTN_LEFT && state == WL_POINTER_BUTTON_STATE_PRESSED) {
-        vkDisplay *display = (vkDisplay *)data;
+        vkDisplayWayland *display = (vkDisplayWayland *)data;
         wl_shell_surface_move(display->m_shell_surface, display->m_seat, serial);
     }
 }
 
-void vkDisplay::pointer_handle_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {}
+void vkDisplayWayland::pointer_handle_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis,
+                                           wl_fixed_t value) {}
 
-const struct wl_pointer_listener vkDisplay::pointer_listener = {vkDisplay::pointer_handle_enter,
-                                                                vkDisplay::pointer_handle_leave,
-                                                                vkDisplay::pointer_handle_motion,
-                                                                vkDisplay::pointer_handle_button,
-                                                                vkDisplay::pointer_handle_axis,
-                                                                nullptr,
-                                                                nullptr,
-                                                                nullptr,
-                                                                nullptr};
+const struct wl_pointer_listener vkDisplayWayland::pointer_listener = {vkDisplayWayland::pointer_handle_enter,
+                                                                       vkDisplayWayland::pointer_handle_leave,
+                                                                       vkDisplayWayland::pointer_handle_motion,
+                                                                       vkDisplayWayland::pointer_handle_button,
+                                                                       vkDisplayWayland::pointer_handle_axis,
+                                                                       nullptr,
+                                                                       nullptr,
+                                                                       nullptr,
+                                                                       nullptr};
 
-void vkDisplay::keyboard_handle_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int fd, uint32_t size) {}
+void vkDisplayWayland::keyboard_handle_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int fd, uint32_t size) {}
 
-void vkDisplay::keyboard_handle_enter(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface,
-                                      struct wl_array *keys) {}
+void vkDisplayWayland::keyboard_handle_enter(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface,
+                                             struct wl_array *keys) {}
 
-void vkDisplay::keyboard_handle_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface) {}
+void vkDisplayWayland::keyboard_handle_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial,
+                                             struct wl_surface *surface) {}
 
-void vkDisplay::keyboard_handle_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key,
-                                    uint32_t state) {
+void vkDisplayWayland::keyboard_handle_key(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t time, uint32_t key,
+                                           uint32_t state) {
     if (state != WL_KEYBOARD_KEY_STATE_RELEASED) return;
-    vkDisplay *display = (vkDisplay *)data;
+    vkDisplayWayland *display = (vkDisplayWayland *)data;
     switch (key) {
         case KEY_ESC:
             display->set_quit_status(true);
@@ -575,16 +322,16 @@ void vkDisplay::keyboard_handle_key(void *data, struct wl_keyboard *keyboard, ui
     }
 }
 
-void vkDisplay::keyboard_handle_modifiers(void *data, wl_keyboard *keyboard, uint32_t serial, uint32_t mods_depressed,
-                                          uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {}
+void vkDisplayWayland::keyboard_handle_modifiers(void *data, wl_keyboard *keyboard, uint32_t serial, uint32_t mods_depressed,
+                                                 uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {}
 
-const struct wl_keyboard_listener vkDisplay::keyboard_listener = {
-    vkDisplay::keyboard_handle_keymap, vkDisplay::keyboard_handle_enter,     vkDisplay::keyboard_handle_leave,
-    vkDisplay::keyboard_handle_key,    vkDisplay::keyboard_handle_modifiers, nullptr};
+const struct wl_keyboard_listener vkDisplayWayland::keyboard_listener = {
+    vkDisplayWayland::keyboard_handle_keymap, vkDisplayWayland::keyboard_handle_enter,     vkDisplayWayland::keyboard_handle_leave,
+    vkDisplayWayland::keyboard_handle_key,    vkDisplayWayland::keyboard_handle_modifiers, nullptr};
 
-void vkDisplay::seat_handle_capabilities(void *data, wl_seat *seat, uint32_t caps) {
+void vkDisplayWayland::seat_handle_capabilities(void *data, wl_seat *seat, uint32_t caps) {
     // Subscribe to pointer events
-    vkDisplay *display = (vkDisplay *)data;
+    vkDisplayWayland *display = (vkDisplayWayland *)data;
     if ((caps & WL_SEAT_CAPABILITY_POINTER) && !display->m_pointer) {
         display->m_pointer = wl_seat_get_pointer(seat);
         wl_pointer_add_listener(display->m_pointer, &pointer_listener, display);
@@ -602,11 +349,12 @@ void vkDisplay::seat_handle_capabilities(void *data, wl_seat *seat, uint32_t cap
     }
 }
 
-const struct wl_seat_listener vkDisplay::seat_listener = {vkDisplay::seat_handle_capabilities, nullptr};
+const struct wl_seat_listener vkDisplayWayland::seat_listener = {vkDisplayWayland::seat_handle_capabilities, nullptr};
 
-void vkDisplay::registry_handle_global(void *data, wl_registry *registry, uint32_t id, const char *interface, uint32_t version) {
+void vkDisplayWayland::registry_handle_global(void *data, wl_registry *registry, uint32_t id, const char *interface,
+                                              uint32_t version) {
     // pickup wayland objects when they appear
-    vkDisplay *display = (vkDisplay *)data;
+    vkDisplayWayland *display = (vkDisplayWayland *)data;
     if (strcmp(interface, "wl_compositor") == 0) {
         display->m_compositor = (wl_compositor *)wl_registry_bind(registry, id, &wl_compositor_interface, 1);
     } else if (strcmp(interface, "wl_shell") == 0) {
@@ -617,9 +365,207 @@ void vkDisplay::registry_handle_global(void *data, wl_registry *registry, uint32
     }
 }
 
-void vkDisplay::registry_handle_global_remove(void *data, wl_registry *registry, uint32_t name) {}
+void vkDisplayWayland::registry_handle_global_remove(void *data, wl_registry *registry, uint32_t name) {}
 
-const struct wl_registry_listener vkDisplay::registry_listener = {vkDisplay::registry_handle_global,
-                                                                  vkDisplay::registry_handle_global_remove};
+const struct wl_registry_listener vkDisplayWayland::registry_listener = {vkDisplayWayland::registry_handle_global,
+                                                                         vkDisplayWayland::registry_handle_global_remove};
 
-#endif
+#endif  // defined(PLATFORM_LINUX) && defined(VK_USE_PLATFORM_WAYLAND_KHR)
+
+#if defined(PLATFORM_LINUX) && defined(ANDROID)
+#include <jni.h>
+
+vkDisplayAndroid::vkDisplayAndroid(struct android_app *app) : m_windowWidth(0), m_windowHeight(0), m_frameNumber(0) {
+    memset(&m_surface, 0, sizeof(VkIcdSurfaceAndroid));
+    m_window = app->window;
+    m_surface.window = app->window;
+    m_android_app = app;
+    m_android_app->userData = this;
+}
+
+vkDisplayAndroid::~vkDisplayAndroid() {}
+
+int vkDisplayAndroid::init(const unsigned int gpu_idx) {
+    // m_gpuIdx = gpu_idx;
+    set_pause_status(false);
+    set_quit_status(false);
+    return 0;
+}
+
+int vkDisplayAndroid::create_window(const unsigned int width, const unsigned int height) { return 0; }
+
+void vkDisplayAndroid::resize_window(const unsigned int width, const unsigned int height) {
+    if (width != m_windowWidth || height != m_windowHeight) {
+        m_windowWidth = width;
+        m_windowHeight = height;
+        // For Android, we adjust the screen orientation based on requested width and height.
+        int32_t pixel_width = ANativeWindow_getWidth(m_window);
+        int32_t pixel_height = ANativeWindow_getHeight(m_window);
+
+        // We don't change the current orientation if width == height or if the requested orientation matches the current
+        // orientation.
+        if ((width != height) && ((width < height) != (pixel_width < pixel_height))) {
+            JavaVM *jni_vm = nullptr;
+            jobject jni_activity = nullptr;
+            JNIEnv *env = nullptr;
+
+            if ((m_android_app != nullptr) && (m_android_app->activity != nullptr)) {
+                jni_vm = m_android_app->activity->vm;
+                jni_activity = m_android_app->activity->clazz;
+            }
+
+            if ((jni_vm != nullptr) && (jni_activity != 0) && (jni_vm->AttachCurrentThread(&env, nullptr) == JNI_OK)) {
+                jclass object_class = env->GetObjectClass(jni_activity);
+                jmethodID set_orientation = env->GetMethodID(object_class, "setRequestedOrientation", "(I)V");
+
+                if (width > height) {
+                    const int SCREEN_ORIENTATION_LANDSCAPE = 0;
+                    env->CallVoidMethod(jni_activity, set_orientation, SCREEN_ORIENTATION_LANDSCAPE);
+                } else {
+                    const int SCREEN_ORIENTATION_PORTRAIT = 1;
+                    env->CallVoidMethod(jni_activity, set_orientation, SCREEN_ORIENTATION_PORTRAIT);
+                }
+
+                jni_vm->DetachCurrentThread();
+            }
+        }
+
+        ANativeWindow_setBuffersGeometry(m_window, width, height, ANativeWindow_getFormat(m_window));
+    }
+}
+
+void vkDisplayAndroid::process_event() {
+    int events;
+    struct android_poll_source *source;
+    if (ALooper_pollAll(0, NULL, &events, (void **)&source) >= 0) {
+        if (source) {
+            source->process(m_android_app, source);
+        }
+
+        if (m_android_app->destroyRequested != 0) {
+            this->set_quit_status(true);
+        }
+    }
+}
+
+#endif  // defined(PLATFORM_LINUX) && defined(ANDROID)
+
+#if defined(WIN32)
+
+LRESULT WINAPI WindowProcVk(HWND window, unsigned int msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_KEYUP: {
+            auto *const display = (vkDisplay *)GetWindowLongPtr(window, GWLP_USERDATA);
+            assert(display != nullptr);
+            switch (wp) {
+                case VK_SPACE:
+                    display->set_pause_status(!display->get_pause_status());
+                    break;
+                case VK_ESCAPE:
+                    DestroyWindow(window);
+                    PostQuitMessage(0);
+                    break;
+                default:
+                    break;
+            }
+            return S_OK;
+        }
+        case WM_NCCREATE:
+            // Changes made with SetWindowLongPtr will not take effect until SetWindowPos is called.
+            SetWindowLongPtr(window, GWLP_USERDATA, (LONG_PTR)((CREATESTRUCT *)lp)->lpCreateParams);
+            SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+            return DefWindowProc(window, msg, wp, lp);
+        case WM_CLOSE:
+            DestroyWindow(window);
+        // fall-thru
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            return S_OK;
+        default:
+            return DefWindowProc(window, msg, wp, lp);
+    }
+}
+
+vkDisplayWin32::vkDisplayWin32() : m_windowWidth(0), m_windowHeight(0), m_frameNumber(0) {
+    memset(&m_surface, 0, sizeof(VkIcdSurfaceWin32));
+    m_windowHandle = NULL;
+    m_connection = NULL;
+}
+
+vkDisplayWin32::~vkDisplayWin32() {}
+
+int vkDisplayWin32::init(const unsigned int gpu_idx) {
+    // m_gpuIdx = gpu_idx;
+    set_pause_status(false);
+    set_quit_status(false);
+    return 0;
+}
+
+int vkDisplayWin32::create_window(const unsigned int width, const unsigned int height) {
+    // Register Window class
+    WNDCLASSEX wcex = {};
+    m_connection = GetModuleHandle(0);
+    wcex.cbSize = sizeof(WNDCLASSEX);
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WindowProcVk;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = m_connection;
+    wcex.hIcon = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_ICON));
+    wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszMenuName = NULL;
+    wcex.lpszClassName = APP_NAME;
+    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_ICON));
+    if (!RegisterClassEx(&wcex)) {
+        vktrace_LogError("Failed to register windows class");
+        return -1;
+    }
+
+    // create the window
+    RECT wr = {0, 0, (LONG)width, (LONG)height};
+    AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
+    m_windowHandle = CreateWindow(APP_NAME, APP_NAME, WS_OVERLAPPEDWINDOW, 0, 0, wr.right - wr.left, wr.bottom - wr.top, NULL, NULL,
+                                  wcex.hInstance, this);
+
+    if (m_windowHandle) {
+        m_windowWidth = width;
+        m_windowHeight = height;
+    } else {
+        vktrace_LogError("Failed to create window");
+        return -1;
+    }
+    // TODO : Not sure of best place to put this, but I have all the info I need here so just setting it all here for now
+    m_surface.base.platform = VK_ICD_WSI_PLATFORM_WIN32;
+    m_surface.hinstance = wcex.hInstance;
+    m_surface.hwnd = m_windowHandle;
+
+    return 0;
+}
+
+void vkDisplayWin32::resize_window(const unsigned int width, const unsigned int height) {
+    if (width != m_windowWidth || height != m_windowHeight) {
+        m_windowWidth = width;
+        m_windowHeight = height;
+
+        RECT wr = {0, 0, (LONG)width, (LONG)height};
+        AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
+        SetWindowPos(get_window_handle(), HWND_TOP, 0, 0, wr.right - wr.left, wr.bottom - wr.top, SWP_NOMOVE);
+
+        // Make sure window is visible.
+        ShowWindow(m_windowHandle, SW_SHOWDEFAULT);
+    }
+}
+
+void vkDisplayWin32::process_event() {
+    MSG msg = {};
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+        if (msg.message == WM_QUIT) {
+            exit(0);  // Prevents crashing due to vulkan cmds being on different thread than WindowProcVk
+        }
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
+#endif  // defined(WIN32)
