@@ -115,7 +115,7 @@ void vkDisplayAndroid::process_event() {
 LRESULT WINAPI WindowProcVk(HWND window, unsigned int msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_KEYUP: {
-            auto *const display = (vkDisplay *)GetWindowLongPtr(window, GWLP_USERDATA);
+            auto *const display = (vkDisplayWin32 *)GetWindowLongPtr(window, GWLP_USERDATA);
             assert(display != nullptr);
             switch (wp) {
                 case VK_SPACE:
@@ -226,6 +226,10 @@ void vkDisplayWin32::process_event() {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+}
+
+void vkDisplayWin32::set_window_handle(void* pHandle) {
+    m_windowHandle = *((HWND*)pHandle);
 }
 
 #endif  // defined(WIN32)
