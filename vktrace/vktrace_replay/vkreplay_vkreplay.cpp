@@ -52,7 +52,13 @@ vkReplay::vkReplay(vkreplayer_settings *pReplaySettings, vktrace_trace_file_head
     m_pDSDump = NULL;
     m_pCBDump = NULL;
     m_display = display;
-    m_displayServer = pReplaySettings->displayServer;
+
+    if (strcasecmp(pReplaySettings->displayServer, "xcb") == 0) {
+        m_displayServer = VK_DISPLAY_XCB;
+    } else if (strcasecmp(pReplaySettings->displayServer, "wayland") == 0) {
+        m_displayServer = VK_DISPLAY_WAYLAND;
+    }
+
     //    m_pVktraceSnapshotPrint = NULL;
     m_objMapper.m_adjustForGPU = false;
 
@@ -3534,7 +3540,7 @@ VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSur
 // TODO
 #elif defined(PLATFORM_LINUX)
 /*if defined(VK_USE_PLATFORM_XLIB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXlib::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XLIB) {
         VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *)m_display->get_surface();
         VkXlibSurfaceCreateInfoKHR createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
@@ -3546,7 +3552,7 @@ VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSur
     }
 #endif*/
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXcb::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XCB) {
         VkIcdSurfaceXcb *pSurf = (VkIcdSurfaceXcb *)m_display->get_surface();
         VkXcbSurfaceCreateInfoKHR createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
@@ -3558,7 +3564,7 @@ VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSur
     }
 #endif
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayWayland::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_WAYLAND) {
         VkIcdSurfaceWayland *pSurf = (VkIcdSurfaceWayland *)m_display->get_surface();
         VkWaylandSurfaceCreateInfoKHR createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
@@ -3631,7 +3637,7 @@ VkResult vkReplay::manually_replay_vkCreateWaylandSurfaceKHR(packet_vkCreateWayl
 // TODO
 #elif defined(PLATFORM_LINUX)
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayWayland::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_WAYLAND) {
         VkIcdSurfaceWayland *pSurf = (VkIcdSurfaceWayland *)m_display->get_surface();
         VkWaylandSurfaceCreateInfoKHR createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
@@ -3643,7 +3649,7 @@ VkResult vkReplay::manually_replay_vkCreateWaylandSurfaceKHR(packet_vkCreateWayl
     }
 #endif
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXcb::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XCB) {
         VkIcdSurfaceXcb *pSurf = (VkIcdSurfaceXcb *)m_display->get_surface();
         VkXcbSurfaceCreateInfoKHR createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
@@ -3655,7 +3661,7 @@ VkResult vkReplay::manually_replay_vkCreateWaylandSurfaceKHR(packet_vkCreateWayl
     }
 #endif
 /*#if defined(VK_USE_PLATFORM_XLIB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXcb::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XCB) {
         VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *)m_display->get_surface();
         VkXlibSurfaceCreateInfoKHR createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
@@ -3678,8 +3684,7 @@ VkResult vkReplay::manually_replay_vkCreateWaylandSurfaceKHR(packet_vkCreateWayl
     createInfo.hinstance = pSurf->hinstance;
     createInfo.hwnd = pSurf->hwnd;
     replayResult = m_vkFuncs.CreateWin32SurfaceKHR(remappedinstance, &createInfo, pPacket->pAllocator, &local_pSurface);
-#else
-    vktrace_LogError("manually_replay_vkCreateWaylandSurfaceKHR not implemented on this playback platform");
+#else vktrace_LogError("manually_replay_vkCreateWaylandSurfaceKHR not implemented on this playback platform");
     replayResult = VK_ERROR_FEATURE_NOT_PRESENT;
 #endif
     if (replayResult == VK_SUCCESS) {
@@ -3917,7 +3922,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXcbPresentationSupportKHR(
     return VK_TRUE;
 #elif defined(PLATFORM_LINUX)
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXcb::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XCB) {
         vkDisplayXcb *pDisp = (vkDisplayXcb *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceXcbPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                      pDisp->get_connection_handle(),
@@ -3925,7 +3930,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXcbPresentationSupportKHR(
     }
 #endif
 /*#if defined(VK_USE_PLATFORM_XLIB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXlib::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XLIB) {
         VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *)m_display->get_surface();
         return (m_vkFuncs.GetPhysicalDeviceXlibPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                              pSurf->dpy,
@@ -3933,7 +3938,7 @@ m_display->get_screen_handle()->root_visual));
     }
 #endif*/
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayWayland::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_WAYLAND) {
         vkDisplayWayland *pDisp = (vkDisplayWayland *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceWaylandPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                          pDisp->get_display_handle()));
@@ -3976,7 +3981,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR
     return VK_TRUE;
 #elif defined(PLATFORM_LINUX)
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXcb::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XCB) {
         vkDisplayXcb *pDisp = (vkDisplayXcb *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceXcbPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                      pDisp->get_connection_handle(),
@@ -3984,7 +3989,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR
     }
 #endif
 /*#if defined(VK_USE_PLATFORM_XLIB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXlib::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XLIB) {
         VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *)m_display->get_surface();
         return (m_vkFuncs.GetPhysicalDeviceXlibPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                              pSurf->dpy,
@@ -3992,7 +3997,7 @@ m_display->get_screen_handle()->root_visual));
     }
 #endif*/
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayWayland::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_WAYLAND) {
         vkDisplayWayland *pDisp = (vkDisplayWayland *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceWaylandPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                          pDisp->get_display_handle()));
@@ -4035,7 +4040,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceWaylandPresentationSupport
     return VK_TRUE;
 #elif defined(PLATFORM_LINUX)
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXcb::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XCB) {
         vkDisplayXcb *pDisp = (vkDisplayXcb *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceXcbPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                      pDisp->get_connection_handle(),
@@ -4043,7 +4048,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceWaylandPresentationSupport
     }
 #endif
 /*#if defined(VK_USE_PLATFORM_XLIB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXlib::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XLIB) {
         VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *)m_display->get_surface();
         return (m_vkFuncs.GetPhysicalDeviceXlibPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                              pSurf->dpy,
@@ -4051,7 +4056,7 @@ m_display->get_screen_handle()->root_visual));
     }
 #endif*/
 #if VK_USE_PLATFORM_WAYLAND_KHR
-    if (strcasecmp(m_displayServer, vkDisplayWayland::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_WAYLAND) {
         vkDisplayWayland *pDisp = (vkDisplayWayland *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceWaylandPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                          pDisp->get_display_handle()));
@@ -4094,7 +4099,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceWin32PresentationSupportKH
     return VK_TRUE;
 #elif defined(PLATFORM_LINUX)
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXcb::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XCB) {
         vkDisplayXcb *pDisp = (vkDisplayXcb *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceXcbPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                      pDisp->get_connection_handle(),
@@ -4102,14 +4107,14 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceWin32PresentationSupportKH
     }
 #endif
 /*#if defined(VK_USE_PLATFORM_XLIB_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayXlib::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_XLIB) {
         VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *)m_display->get_surface();
         return (m_vkFuncs.GetPhysicalDeviceXlibPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                          pSurf->dpy, m_display->get_screen_handle()->root_visual));
     }
 #endif*/
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
-    if (strcasecmp(m_displayServer, vkDisplayWayland::NAME) == 0) {
+    if (m_displayServer == VK_DISPLAY_WAYLAND) {
         vkDisplayWayland *pDisp = (vkDisplayWayland *)m_display;
         return (m_vkFuncs.GetPhysicalDeviceWaylandPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex,
                                                                          pDisp->get_display_handle()));
